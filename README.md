@@ -8,6 +8,7 @@ A Rust-based Model Context Protocol (MCP) server for accessing iMessage data on 
 - **Sent Messages**: Retrieve sent iMessages from the local iMessage database
 - **Timestamp Decoding**: Properly decodes Apple's Snowflake timestamp format used in iMessage databases
 - **Contact Lookup**: (Planned) Integration with macOS Contacts framework for contact name resolution
+- **HTTP Streamable Transport**: MCP server supports HTTP streamable transport via `POST /mcp` and `GET /mcp` (SSE)
 
 ## Prerequisites
 
@@ -32,53 +33,66 @@ The compiled binary will be available at `target/release/imsg-mcp`.
 
 ## MCP Server Configuration
 
-### Configuring for Claude Desktop
+### HTTP Streamable Transport (Recommended)
 
-To use `imsg-mcp` with Claude Desktop, you need to add it to your MCP servers configuration file.
+The MCP server supports the HTTP streamable transport protocol, which is the recommended approach for modern MCP clients.
+
+#### Starting the Server
+
+Run the server:
+```bash
+./target/release/imsg-mcp
+```
+
+The server will start listening on `http://127.0.0.1:3000/mcp`.
+
+#### Configuring for Claude Desktop
+
+To use `imsg-mcp` with Claude Desktop using the HTTP transport:
 
 1. Build the release binary:
    ```bash
    cargo build --release
    ```
 
-2. Locate or create the Claude Desktop MCP configuration file:
+2. Start the MCP server:
+   ```bash
+   ./target/release/imsg-mcp
+   ```
+
+3. Locate or create the Claude Desktop MCP configuration file:
    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-3. Add the `imsg-mcp` server to the configuration:
+4. Add the `imsg-mcp` server to the configuration using the HTTP transport:
    ```json
    {
      "mcpServers": {
        "imsg-mcp": {
-         "command": "/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp",
-         "env": {
-           "TERM_PROGRAM": "Apple_Terminal"
-         }
+         "url": "http://127.0.0.1:3000/mcp"
        }
      }
    }
    ```
 
-   **Important**: Replace `/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp` with the actual path to your compiled binary.
+5. Restart Claude Desktop to apply the changes.
 
-4. Restart Claude Desktop to apply the changes.
+#### Configuring for Other MCP Clients
 
-### Configuring for Other MCP Clients
+**Cursor**
 
-#### Cursor
-
-Cursor supports MCP servers through its settings. Add the following to your Cursor MCP settings:
+Cursor supports MCP servers via HTTP transport. Add the following to your Cursor MCP settings:
 
 ```json
 {
   "mcpServers": {
     "imsg-mcp": {
-      "command": "/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp"
+      "url": "http://127.0.0.1:3000/mcp"
     }
   }
 }
 ```
 
-#### Windsurf
+**Windsurf**
 
 Add to your Windsurf MCP configuration file:
 
@@ -86,7 +100,7 @@ Add to your Windsurf MCP configuration file:
 {
   "mcpServers": {
     "imsg-mcp": {
-      "command": "/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp"
+      "url": "http://127.0.0.1:3000/mcp"
     }
   }
 }
@@ -102,9 +116,9 @@ For `imsg-mcp` to function properly on macOS, the following permissions may be r
 
 ### Troubleshooting
 
-- **Binary not found**: Ensure the `command` path in your MCP configuration points to the actual location of the compiled `imsg-mcp` binary.
+- **Server not starting**: Ensure port 3000 is not in use by another process. Check the server logs for any errors.
 - **Database access denied**: Verify that the user running the MCP server has read permissions to `~/Library/Messages/chat.db`.
-- **Server not starting**: Check the MCP client's logs for any JSON-RPC errors or initialization failures.
+- **Client connection failed**: Ensure the server is running and accessible at `http://127.0.0.1:3000/mcp`. Check your MCP client's logs for connection errors.
 
 ## Available Tools
 
@@ -141,6 +155,32 @@ Lists the messages in the sent folder.
   }
 }
 ```
+
+## HTTP API
+
+The MCP server exposes the following HTTP endpoints:
+
+### `POST /mcp`
+
+Handles JSON-RPC 2.0 requests. Accepts `application/json` content type and returns JSON responses by default, or `text/event-stream` (SSE) if the `Accept: text/event-stream` header is provided.
+
+**Request headers:**
+- `Content-Type: application/json`
+- `Accept: application/json` (default) or `Accept: text/event-stream`
+
+**Request body:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/list",
+  "params": {},
+  "id": 1
+}
+```
+
+### `GET /mcp`
+
+Establishes an SSE (Server-Sent Events) connection for server-to-client messages. Returns `text/event-stream`.
 
 ## Database Schema
 

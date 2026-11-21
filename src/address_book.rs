@@ -18,7 +18,7 @@ impl Contact {
 }
 
 #[cfg(target_os = "macos")]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct AddressBook {
     store: Option<()>,

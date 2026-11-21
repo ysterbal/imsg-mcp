@@ -8,7 +8,7 @@ use crate::snowflake::SnowflakeDecoder;
 #[cfg(target_os = "macos")]
 use crate::address_book::AddressBook;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IMessageServer {
     db_location: String,
     #[allow(dead_code)]
@@ -25,7 +25,10 @@ impl IMessageServer {
 
     fn get_db_connection(&self) -> SqliteResult<Connection> {
         let db_path = shellexpand::tilde(&self.db_location).to_string();
-        Connection::open(db_path)
+        // Open as read-only to avoid locking issues with the Messages app
+        let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | 
+                    rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        Connection::open_with_flags(&db_path, flags)
     }
 
     pub fn get_received_messages(&self, limit: usize) -> Result<Vec<MessageDTO>> {
