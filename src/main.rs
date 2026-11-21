@@ -422,8 +422,20 @@ async fn handle_mcp_get(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Privacy-first logging configuration:
+    // - Default to 'info' level to suppress debug/trace logs that might contain sensitive data
+    // - Suppress verbose logging from dependencies (rusqlite, axum, tokio, etc.) that could potentially log SQL queries or request/response bodies
+    let log_level = std::env::var("IMSG_MCP_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
+    
+    let filter_str = format!(
+        "imsg_mcp={},axum=warn,tower_http=warn,rusqlite=warn,tokio=warn,hyper=warn",
+        log_level
+    );
+    
+    let filter = tracing_subscriber::EnvFilter::try_new(filter_str).unwrap();
+
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(filter)
         .init();
 
     let config = ServerConfig::load();
