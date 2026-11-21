@@ -30,19 +30,81 @@ cargo build --release
 
 The compiled binary will be available at `target/release/imsg-mcp`.
 
-### Using with an MCP Client
+## MCP Server Configuration
 
-To use `imsg-mcp` with an MCP-compatible client (like Claude Desktop), add the following configuration to your client's MCP settings:
+### Configuring for Claude Desktop
+
+To use `imsg-mcp` with Claude Desktop, you need to add it to your MCP servers configuration file.
+
+1. Build the release binary:
+   ```bash
+   cargo build --release
+   ```
+
+2. Locate or create the Claude Desktop MCP configuration file:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+3. Add the `imsg-mcp` server to the configuration:
+   ```json
+   {
+     "mcpServers": {
+       "imsg-mcp": {
+         "command": "/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp",
+         "env": {
+           "TERM_PROGRAM": "Apple_Terminal"
+         }
+       }
+     }
+   }
+   ```
+
+   **Important**: Replace `/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp` with the actual path to your compiled binary.
+
+4. Restart Claude Desktop to apply the changes.
+
+### Configuring for Other MCP Clients
+
+#### Cursor
+
+Cursor supports MCP servers through its settings. Add the following to your Cursor MCP settings:
 
 ```json
 {
   "mcpServers": {
     "imsg-mcp": {
-      "command": "/path/to/imsg-mcp/target/release/imsg-mcp"
+      "command": "/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp"
     }
   }
 }
 ```
+
+#### Windsurf
+
+Add to your Windsurf MCP configuration file:
+
+```json
+{
+  "mcpServers": {
+    "imsg-mcp": {
+      "command": "/Users/yourusername/development/imsg-mcp/target/release/imsg-mcp"
+    }
+  }
+}
+```
+
+### macOS Permissions Required
+
+For `imsg-mcp` to function properly on macOS, the following permissions may be required:
+
+1. **iMessage Database Access**: The server reads from `~/Library/Messages/chat.db`. Ensure your user account has read access to this file.
+
+2. **Contacts Framework Access** (Planned): Full contact name resolution requires the app to have Contacts framework entitlements and user permission. The current implementation includes a stub for contact lookup that returns `None` without proper entitlements.
+
+### Troubleshooting
+
+- **Binary not found**: Ensure the `command` path in your MCP configuration points to the actual location of the compiled `imsg-mcp` binary.
+- **Database access denied**: Verify that the user running the MCP server has read permissions to `~/Library/Messages/chat.db`.
+- **Server not starting**: Check the MCP client's logs for any JSON-RPC errors or initialization failures.
 
 ## Available Tools
 
