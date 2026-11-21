@@ -66,22 +66,68 @@ impl ServerConfig {
         }
         
         // Read auth token from environment variable (overrides config file for security)
-        let auth_token = std::env::var("IMSG_MCP_AUTH_TOKEN").ok();
+        let mut auth_token = std::env::var("IMSG_MCP_AUTH_TOKEN").ok();
+        let mut auth_source = String::from("IMSG_MCP_AUTH_TOKEN environment variable");
+        
+        // If not in env var, try macOS Keychain (macOS only)
+        if auth_token.is_none() {
+            #[cfg(target_os = "macos")]
+            {
+                auth_token = get_auth_token_from_keychain();
+                if auth_token.is_some() {
+                    auth_source = "macOS Keychain".to_string();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                // No keychain support on non-macOS
+            }
+        }
         
         if auth_token.is_some() {
-            info!("Authentication enabled via IMSG_MCP_AUTH_TOKEN environment variable");
+            info!("Authentication enabled via {}", auth_source);
         } else if config.auth_token.is_some() {
             info!("Authentication enabled via config file (deprecated and insecure)");
         } else {
             info!("Using default config (port: {}, no auth token)", config.port);
         }
 
-        // Return config with auth_token from env var (prioritizes env var for security)
+        // Return config with auth_token from env var or keychain (prioritizes env var for security)
         ServerConfig {
             port: config.port,
             auth_token,
         }
     }
+}
+
+/// Retrieve the auth token from the macOS Keychain using the `security` CLI.
+#[cfg(target_os = "macos")]
+fn get_auth_token_from_keychain() -> Option<String> {
+    // Try to get the token from the macOS Keychain using the `security` CLI
+    // Service: imsg-mcp-auth, Account: imsg-mcp
+    let output = std::process::Command::new("security")
+        .args([
+            "find-generic-password",
+            "-s", "imsg-mcp-auth",
+            "-a", "imsg-mcp",
+            "-w",
+        ])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let token = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !token.is_empty() {
+                return Some(token);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn get_auth_token_from_keychain() -> Option<String> {
+    None
 }
 
 // MCP JSON-RPC types
