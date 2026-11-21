@@ -32,7 +32,8 @@ use crate::address_book::AddressBook;
 #[serde(default)]
 pub struct ServerConfig {
     pub port: u16,
-    pub auth_token: Option<String>,
+    #[serde(default)]
+    pub auth_token: Option<String>, // Deprecated: use IMSG_MCP_AUTH_TOKEN env var instead
 }
 
 impl ServerConfig {
@@ -52,9 +53,11 @@ impl ServerConfig {
                 if let Ok(content) = fs::read_to_string(&path_str) {
                     if let Ok(parsed) = serde_json::from_str::<ServerConfig>(&content) {
                         config.port = parsed.port;
-                        config.auth_token = parsed.auth_token;
+                        if parsed.auth_token.is_some() {
+                            tracing::warn!("auth_token found in config file at {}. For security, please remove auth_token from the config file and use the IMSG_MCP_AUTH_TOKEN environment variable instead.", path_str);
+                        }
                         info!("Loaded config from {}", path_str);
-                        return config;
+                        break; // Stop after first found config
                     } else {
                         tracing::warn!("Failed to parse config from {}", path_str);
                     }
@@ -62,8 +65,22 @@ impl ServerConfig {
             }
         }
         
-        info!("Using default config (port: 3000, no auth token)");
-        config
+        // Read auth token from environment variable (overrides config file for security)
+        let auth_token = std::env::var("IMSG_MCP_AUTH_TOKEN").ok();
+        
+        if auth_token.is_some() {
+            info!("Authentication enabled via IMSG_MCP_AUTH_TOKEN environment variable");
+        } else if config.auth_token.is_some() {
+            info!("Authentication enabled via config file (deprecated and insecure)");
+        } else {
+            info!("Using default config (port: {}, no auth token)", config.port);
+        }
+
+        // Return config with auth_token from env var (prioritizes env var for security)
+        ServerConfig {
+            port: config.port,
+            auth_token,
+        }
     }
 }
 

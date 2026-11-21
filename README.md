@@ -48,7 +48,7 @@ The server will start listening on `http://127.0.0.1:3000/mcp`.
 
 #### Server Configuration File
 
-The server supports configuration via a JSON file. It will look for configuration files in the following order:
+The server supports configuration via a JSON file for the `port` setting. It will look for configuration files in the following order:
 1. `imsg-mcp.json` (current directory)
 2. `.imsg-mcp.json` (current directory)
 3. `~/.imsg-mcp.json` (home directory)
@@ -57,16 +57,25 @@ The server supports configuration via a JSON file. It will look for configuratio
 **Example configuration file (`imsg-mcp.json`):**
 ```json
 {
-  "port": 3000,
-  "auth_token": "your-secret-token-here"
+  "port": 3000
 }
 ```
 
 **Configuration options:**
 - `port` (integer, optional): The port the server listens on. Default: `3000`
-- `auth_token` (string, optional): Bearer token for authentication. If set, clients must include `Authorization: Bearer <token>` in their requests.
 
-If no configuration file is found, the server uses default values (port: 3000, no authentication).
+**Authentication Token (Secure Method):**
+
+For security, the authentication token should **not** be stored in the config file in clear text. Instead, use the `IMSG_MCP_AUTH_TOKEN` environment variable:
+
+```bash
+export IMSG_MCP_AUTH_TOKEN="your-secret-token-here"
+./target/release/imsg-mcp
+```
+
+If an `auth_token` is found in the config file, the server will log a warning and ignore it, prioritizing the environment variable for security.
+
+If no configuration file is found and no `IMSG_MCP_AUTH_TOKEN` environment variable is set, the server uses default values (port: 3000, no authentication).
 
 #### Configuring for Claude Desktop
 
