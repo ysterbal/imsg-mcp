@@ -46,6 +46,28 @@ Run the server:
 
 The server will start listening on `http://127.0.0.1:3000/mcp`.
 
+#### Server Configuration File
+
+The server supports configuration via a JSON file. It will look for configuration files in the following order:
+1. `imsg-mcp.json` (current directory)
+2. `.imsg-mcp.json` (current directory)
+3. `~/.imsg-mcp.json` (home directory)
+4. `~/.imsg-mcp/config.json` (home directory)
+
+**Example configuration file (`imsg-mcp.json`):**
+```json
+{
+  "port": 3000,
+  "auth_token": "your-secret-token-here"
+}
+```
+
+**Configuration options:**
+- `port` (integer, optional): The port the server listens on. Default: `3000`
+- `auth_token` (string, optional): Bearer token for authentication. If set, clients must include `Authorization: Bearer <token>` in their requests.
+
+If no configuration file is found, the server uses default values (port: 3000, no authentication).
+
 #### Configuring for Claude Desktop
 
 To use `imsg-mcp` with Claude Desktop using the HTTP transport:

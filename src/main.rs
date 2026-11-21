@@ -7,7 +7,7 @@ mod snowflake;
 use axum::{
     body::to_bytes,
     extract::State,
-    http::{header, HeaderValue},
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response, Sse},
     routing::get,
     Json, Router,
@@ -15,6 +15,8 @@ use axum::{
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
@@ -24,6 +26,46 @@ use crate::imessage::IMessageServer;
 
 #[cfg(target_os = "macos")]
 use crate::address_book::AddressBook;
+
+// Configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct ServerConfig {
+    pub port: u16,
+    pub auth_token: Option<String>,
+}
+
+impl ServerConfig {
+    pub fn load() -> Self {
+        let mut config = ServerConfig::default();
+        config.port = 3000;
+
+        let config_paths: Vec<String> = vec![
+            "imsg-mcp.json".to_string(),
+            ".imsg-mcp.json".to_string(),
+            shellexpand::tilde("~/.imsg-mcp.json").to_string(),
+            shellexpand::tilde("~/.imsg-mcp/config.json").to_string(),
+        ];
+        
+        for path_str in config_paths {
+            if Path::new(&path_str).exists() {
+                if let Ok(content) = fs::read_to_string(&path_str) {
+                    if let Ok(parsed) = serde_json::from_str::<ServerConfig>(&content) {
+                        config.port = parsed.port;
+                        config.auth_token = parsed.auth_token;
+                        info!("Loaded config from {}", path_str);
+                        return config;
+                    } else {
+                        tracing::warn!("Failed to parse config from {}", path_str);
+                    }
+                }
+            }
+        }
+        
+        info!("Using default config (port: 3000, no auth token)");
+        config
+    }
+}
 
 // MCP JSON-RPC types
 #[derive(Debug, Deserialize)]
@@ -64,23 +106,32 @@ pub struct McpServerState {
     #[cfg(target_os = "macos")]
     pub address_book: Option<AddressBook>,
     pub initialized: Arc<RwLock<bool>>,
+    pub auth_token: Option<String>,
 }
 
 impl McpServerState {
-    pub fn new() -> Self {
+    pub fn new(config: &ServerConfig) -> Self {
         #[cfg(target_os = "macos")]
         let address_book = AddressBook::new().ok();
 
         #[cfg(not(target_os = "macos"))]
         let address_book: Option<address_book::AddressBook> = None;
 
+        let imessage_server = IMessageServer::new(None, address_book.clone());
+
+        // Attempt to initialize DB to trigger permission dialog if needed
+        if let Err(e) = imessage_server.init_db() {
+            tracing::warn!("Failed to initialize database during startup: {}", e);
+        }
+
         Self {
-            imessage_server: IMessageServer::new(None, address_book.clone()),
+            imessage_server,
             #[cfg(target_os = "macos")]
             address_book,
             #[cfg(not(target_os = "macos"))]
             address_book: None,
             initialized: Arc::new(RwLock::new(false)),
+            auth_token: config.auth_token.clone(),
         }
     }
 }
@@ -124,6 +175,20 @@ async fn handle_mcp_post(
     State(state): State<Arc<McpServerState>>,
     request: axum::http::Request<axum::body::Body>,
 ) -> Response {
+    // Verify auth token if configured and not empty
+    if let Some(token) = &state.auth_token {
+        if !token.is_empty() {
+            let auth_header = request.headers().get(header::AUTHORIZATION).and_then(|h| h.to_str().ok());
+            let expected = format!("Bearer {}", token);
+            if auth_header != Some(&expected) {
+                let mut response = Response::new(axum::body::Body::from("Unauthorized"));
+                *response.status_mut() = StatusCode::UNAUTHORIZED;
+                response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+                return response;
+            }
+        }
+    }
+
     // Check if client wants SSE response before consuming the body
     let accept_header = request.headers().get(header::ACCEPT).and_then(|h| h.to_str().ok()).unwrap_or("");
     let wants_sse = accept_header.contains("text/event-stream");
@@ -297,7 +362,24 @@ async fn handle_mcp_post(
     }
 }
 
-async fn handle_mcp_get(State(_state): State<Arc<McpServerState>>) -> Response {
+async fn handle_mcp_get(
+    State(state): State<Arc<McpServerState>>,
+    request: axum::http::Request<axum::body::Body>,
+) -> Response {
+    // Verify auth token if configured and not empty
+    if let Some(token) = &state.auth_token {
+        if !token.is_empty() {
+            let auth_header = request.headers().get(header::AUTHORIZATION).and_then(|h| h.to_str().ok());
+            let expected = format!("Bearer {}", token);
+            if auth_header != Some(&expected) {
+                let mut response = Response::new(axum::body::Body::from("Unauthorized"));
+                *response.status_mut() = StatusCode::UNAUTHORIZED;
+                response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+                return response;
+            }
+        }
+    }
+
     // SSE connection for server-to-client messages
     let (tx, rx) = mpsc::channel(100);
     
@@ -327,14 +409,20 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let state = Arc::new(McpServerState::new());
+    let config = ServerConfig::load();
+
+    let state = Arc::new(McpServerState::new(&config));
 
     let app = Router::new()
         .route("/mcp", get(handle_mcp_get).post(handle_mcp_post))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    info!("MCP HTTP streamable server listening on {}", listener.local_addr()?);
+    let bind_addr = format!("127.0.0.1:{}", config.port);
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    info!("MCP HTTP streamable server listening on {}", bind_addr);
+    if config.auth_token.is_some() {
+        info!("Authentication is enabled for this server");
+    }
 
     axum::serve(listener, app).await?;
 

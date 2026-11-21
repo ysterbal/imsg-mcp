@@ -31,6 +31,16 @@ impl IMessageServer {
         Connection::open_with_flags(&db_path, flags)
     }
 
+    pub fn init_db(&self) -> Result<()> {
+        // Attempt to open the database connection to trigger any permission dialogs
+        let conn = self.get_db_connection()?;
+        // Try a simple query to ensure the database is accessible
+        let mut stmt = conn.prepare("SELECT count(*) FROM message")?;
+        let count: i64 = stmt.query_row([], |row| row.get(0))?;
+        tracing::info!("Database initialized successfully, message count: {}", count);
+        Ok(())
+    }
+
     pub fn get_received_messages(&self, limit: usize) -> Result<Vec<MessageDTO>> {
         let conn = self.get_db_connection().map_err(ImsgError::DatabaseError)?;
 
@@ -176,7 +186,14 @@ impl IMessageServer {
                     decoded_text = decoded_text.split("NSString").last().unwrap_or("").to_string();
                     if decoded_text.contains("NSDictionary") {
                         decoded_text = decoded_text.split("NSDictionary").next().unwrap_or("").to_string();
-                        decoded_text = decoded_text[6..decoded_text.len().saturating_sub(12)].to_string();
+                        // Safely slice by characters instead of bytes to avoid UTF-8 panic
+                        let chars: Vec<char> = decoded_text.chars().collect();
+                        if chars.len() > 18 { // 6 prefix + 12 suffix
+                            let sliced_chars: Vec<char> = chars[6..chars.len()-12].to_vec();
+                            decoded_text = sliced_chars.into_iter().collect();
+                        } else {
+                            decoded_text = String::new();
+                        }
                         return Some(decoded_text);
                     }
                 }
