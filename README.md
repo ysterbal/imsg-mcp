@@ -66,16 +66,25 @@ The server supports configuration via a JSON file for the `port` setting. It wil
 
 **Authentication Token (Secure Method):**
 
-For security, the authentication token should **not** be stored in the config file in clear text. Instead, use the `IMSG_MCP_AUTH_TOKEN` environment variable:
+For security, the authentication token should **not** be stored in the config file in clear text or exposed in environment variables visible via `ps`. The server supports three secure methods for auth token configuration, in priority order:
 
-```bash
-export IMSG_MCP_AUTH_TOKEN="your-secret-token-here"
-./target/release/imsg-mcp
-```
+1. **Environment Variable** (`IMSG_MCP_AUTH_TOKEN`):
+   ```bash
+   export IMSG_MCP_AUTH_TOKEN="your-secret-token-here"
+   ./target/release/imsg-mcp
+   ```
 
-If an `auth_token` is found in the config file, the server will log a warning and ignore it, prioritizing the environment variable for security.
+2. **macOS Keychain** (Recommended for local development):
+   Store the token securely in the macOS Keychain:
+   ```bash
+   security add-generic-password -s "imsg-mcp-auth" -a "imsg-mcp" -w "your-secret-token-here"
+   ```
+   The server will automatically retrieve the token from the keychain on startup if `IMSG_MCP_AUTH_TOKEN` is not set. This ensures the token is never exposed in shell history, environment variables, or process lists.
 
-If no configuration file is found and no `IMSG_MCP_AUTH_TOKEN` environment variable is set, the server uses default values (port: 3000, no authentication).
+3. **Config File** (Deprecated and Insecure):
+   If an `auth_token` is found in the config file, the server will log a warning and ignore it, prioritizing the environment variable or keychain for security.
+
+If no configuration file is found, no `IMSG_MCP_AUTH_TOKEN` environment variable is set, and no token exists in the macOS Keychain, the server uses default values (port: 3000, no authentication).
 
 #### Configuring for Claude Desktop
 
