@@ -2,6 +2,7 @@ mod address_book;
 mod errors;
 mod imessage;
 mod models;
+mod setup;
 mod snowflake;
 
 use axum::{
@@ -468,6 +469,13 @@ async fn handle_mcp_get(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Check for setup flag
+    if std::env::args().any(|arg| arg == "--setup") {
+        let mut setup = setup::Setup::new();
+        setup.run()?;
+        return Ok(());
+    }
+
     // Privacy-first logging configuration:
     // - Default to 'info' level to suppress debug/trace logs that might contain sensitive data
     // - Suppress verbose logging from dependencies (rusqlite, axum, tokio, etc.) that could potentially log SQL queries or request/response bodies
