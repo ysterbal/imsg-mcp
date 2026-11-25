@@ -1,1 +1,5 @@
+# Target directory
 /target
+
+# macOS system files
+.DS_Store
